@@ -1,0 +1,9 @@
+{
+  "name": "titlewave",
+  "version": "0.1.0",
+  "description": "Make waves with better coding-agent session titles.",
+  "author": { "name": "walangstudio" },
+  "homepage": "https://github.com/walangstudio/titlewave",
+  "repository": "https://github.com/walangstudio/titlewave",
+  "license": "MIT"
+}

@@ -1,0 +1,141 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync, statSync, chmodSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { validateName, detectAgent, renameGemini, renameSession } from '../lib/agents.mjs';
+import { terminalHost } from '../lib/terminal.mjs';
+import titlewave from '../extensions/pi.mjs';
+import { nativeCommand } from '../lib/rpc.mjs';
+
+test('names preserve spaces, Unicode, quotes, and shell metacharacters', () => {
+  for (const name of ['Fix login', '日本語', 'a "quote"', "O'Brien", '$(touch bad); & echo nope']) assert.equal(validateName(name), name);
+});
+for (const name of ['', '   ', '-flag', 'a\nb', 'a\rb', 'a\x1bb', 'a\x07b', 'a\x9bb', 'a\u202eb', 'a\u2028b', 'x'.repeat(201)]) {
+  test(`reject unsafe name ${JSON.stringify(name)}`, () => assert.throws(() => validateName(name)));
+}
+test('agent detection refuses missing or nested identities', () => {
+  assert.throws(() => detectAgent({}));
+  assert.throws(() => detectAgent({ CODEX_THREAD_ID: 'c', CLAUDE_CODE_SESSION_ID: 'a' }));
+  assert.equal(detectAgent({ CODEX_THREAD_ID: 'c' }), 'codex');
+});
+test('an inner multiplexer wins over the outer terminal', () => {
+  assert.equal(terminalHost({ TMUX: 'socket', TMUX_PANE: '%1', KITTY_WINDOW_ID: '3' }), 'tmux');
+  assert.equal(terminalHost({ STY: 'screen', WINDOW: '0', WEZTERM_PANE: '2' }), 'screen');
+  assert.equal(terminalHost({ ZELLIJ: '0', WEZTERM_PANE: '2' }), 'zellij');
+});
+test('nested multiplexers fail instead of labeling the wrong layer', () => {
+  assert.throws(() => terminalHost({ TMUX: 'outer', TMUX_PANE: '%1', ZELLIJ: '0' }), /Multiple multiplexers/);
+});
+test('the word terminal is a valid saved session name', () => {
+  const result = spawnSync(process.execPath, ['bin/titlewave.mjs', 'terminal', '--agent', 'codex', '--session', 's', '--dry-run'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).name, 'terminal');
+});
+test('dry run starts no agent and emits no terminal escape sequence', () => {
+  const result = spawnSync(process.execPath, ['bin/titlewave.mjs', 'Dry run', '--agent', 'claude', '--session', 'missing', '--terminal', '--dry-run'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).name, 'Dry run');
+  assert.equal(result.stdout.includes('\x1b'), false);
+});
+test('unknown options and extra names fail instead of silently renaming', () => {
+  for (const args of [['one', 'two'], ['one', '--offine']]) assert.notEqual(spawnSync(process.execPath, ['bin/titlewave.mjs', ...args]).status, 0);
+});
+test('closed Gemini rename preserves conversation data', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'titlewave-test-'));
+  try {
+    const file = join(directory, 'session.json');
+    const data = { sessionId: 'g1', projectHash: 'project', messages: [{ type: 'user', content: 'hello' }], summary: 'old', futureField: 42 };
+    writeFileSync(file, JSON.stringify(data));
+    chmodSync(file, 0o640);
+    const mode = statSync(file).mode;
+    renameGemini(file, 'g1', 'new');
+    assert.equal(statSync(file).mode, mode);
+    assert.deepEqual(JSON.parse(readFileSync(file)), { ...data, summary: 'new' });
+    assert.deepEqual(readdirSync(directory), ['session.json']);
+    const saved = readFileSync(file, 'utf8');
+    assert.throws(() => renameGemini(file, 'wrong-session', 'other'));
+    assert.equal(readFileSync(file, 'utf8'), saved);
+  } finally { rmSync(directory, { recursive: true }); }
+});
+test('live Gemini and Pi files cannot be edited by the CLI', async () => {
+  for (const agent of ['gemini', 'pi']) await assert.rejects(renameSession({ agent, name: 'new', session: 's' }), /closed|running/);
+});
+test('Gemini JSONL rename appends metadata without rewriting messages', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'titlewave-jsonl-'));
+  try {
+    const file = join(directory, 'session.jsonl');
+    const original = `${JSON.stringify({ sessionId: 's', projectHash: 'p' })}\n${JSON.stringify({ id: 'm', type: 'user', content: 'hello' })}\n`;
+    writeFileSync(file, original);
+    renameGemini(file, 's', 'JSONL title');
+    const result = readFileSync(file, 'utf8');
+    assert.ok(result.startsWith(original));
+    assert.deepEqual(JSON.parse(result.trimEnd().split('\n').at(-1)), { $set: { summary: 'JSONL title' } });
+  } finally { rmSync(directory, { recursive: true }); }
+});
+test('invalid IDs and unknown agents never start a subprocess', async () => {
+  for (const session of ['', '-flag', 's\ncommand']) await assert.rejects(renameSession({ agent: 'claude', name: 'ok', session }));
+  await assert.rejects(renameSession({ agent: 'other', name: 'ok', session: 's' }), /Unknown agent/);
+});
+test('OpenCode confirms the exact ID and title through its API', async () => {
+  let payload;
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    payload = { method: req.method, path: req.url, data: JSON.parse(body) };
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ id: 'ses_1', title: payload.data.title }));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    await renameSession({ agent: 'opencode', session: 'ses_1', name: 'API title', url: `http://127.0.0.1:${server.address().port}/prefix` });
+    assert.deepEqual(payload, { method: 'PATCH', path: '/prefix/session/ses_1', data: { title: 'API title' } });
+  } finally { server.closeAllConnections(); server.close(); }
+});
+test('OpenCode rejects remote URLs and misleading confirmations', async () => {
+  for (const session of ['.', '..']) await assert.rejects(renameSession({ agent: 'opencode', session, name: 'ok', url: 'http://localhost' }), /dot segment/);
+  for (const url of ['file:///tmp/test', 'https://example.com', 'http://user:pass@localhost']) await assert.rejects(renameSession({ agent: 'opencode', session: 's', name: 'ok', url }));
+  const server = createServer((_req, res) => { res.end(JSON.stringify({ id: 'wrong', title: 'ok' })); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try { await assert.rejects(renameSession({ agent: 'opencode', session: 's', name: 'ok', url: `http://127.0.0.1:${server.address().port}` }), /confirm/); }
+  finally { server.closeAllConnections(); server.close(); }
+});
+test('Pi extension registers a command and a model tool using its native API', async () => {
+  let command, tool, saved;
+  titlewave({ registerCommand: (name, value) => { assert.equal(name, 'titlewave'); command = value; }, registerTool: value => { tool = value; }, setSessionName: name => { saved = name; } });
+  await command.handler('A session', { ui: { notify: () => {} } });
+  assert.equal(saved, 'A session');
+  const result = await tool.execute('call', { name: 'Tool session' });
+  assert.equal(saved, 'Tool session');
+  assert.match(result.content[0].text, /Tool session/);
+  await assert.rejects(tool.execute('call', { name: 'bad\nname' }));
+});
+test('distribution manifests and portable skill have no installation placeholders', () => {
+  const pkg = JSON.parse(readFileSync('package.json'));
+  for (const file of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json', 'gemini-extension.json']) assert.equal(JSON.parse(readFileSync(file)).version, pkg.version);
+  assert.doesNotMatch(readFileSync('skills/titlewave/SKILL.md', 'utf8'), /__RUN__|__DIR__/);
+  for (const file of ['bin/titlewave.mjs', 'hooks/context.mjs', 'LICENSE']) assert.ok(existsSync(file));
+  for (const input of ['', 'not json', 'null']) {
+    const result = spawnSync(process.execPath, ['hooks/context.mjs'], { input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, '');
+  }
+});
+test('Windows executable lookup ignores a binary planted in the working directory', () => {
+  if (process.platform !== 'win32') { assert.equal(nativeCommand('node'), 'node'); return; }
+  const directory = mkdtempSync(join(tmpdir(), 'titlewave-path-'));
+  const previous = process.cwd();
+  try {
+    writeFileSync(join(directory, 'node.exe'), 'untrusted fixture');
+    process.chdir(directory);
+    assert.notEqual(nativeCommand('node').toLowerCase(), join(directory, 'node.exe').toLowerCase());
+    const systemRoot = process.env.SystemRoot;
+    try {
+      delete process.env.SystemRoot;
+      assert.throws(() => nativeCommand('node'), /SystemRoot is missing/);
+    } finally { process.env.SystemRoot = systemRoot; }
+  } finally { process.chdir(previous); rmSync(directory, { recursive: true }); }
+});
