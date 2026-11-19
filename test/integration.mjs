@@ -15,7 +15,7 @@ Object.assign(process.env, { HOME: home, USERPROFILE: home, CODEX_HOME: join(hom
 mkdirSync(process.env.CODEX_HOME);
 delete process.env.CLAUDECODE;
 delete process.env.OPENCODE_SERVER_PASSWORD;
-const run = (exe, args, options = {}) => execFileSync(exe, args, { cwd, encoding: 'utf8', timeout: 60000, windowsHide: true, ...options });
+const run = (exe, args, options = {}) => execFileSync(exe, args, { cwd, encoding: 'utf8', timeout: 90000, windowsHide: true, ...options });
 const cli = (...args) => run(process.execPath, [join(root, 'bin/titlewave.mjs'), ...args]);
 const results = [];
 async function check(name, action) {

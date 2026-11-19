@@ -1,6 +1,6 @@
 {
   "name": "titlewave",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Label the terminal and rename closed Gemini sessions.",
   "contextFileName": "GEMINI.md"
 }
