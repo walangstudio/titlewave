@@ -3,6 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { withRpc } from '../lib/rpc.mjs';
 
@@ -15,8 +16,8 @@ Object.assign(process.env, { HOME: home, USERPROFILE: home, CODEX_HOME: join(hom
 mkdirSync(process.env.CODEX_HOME);
 delete process.env.CLAUDECODE;
 delete process.env.OPENCODE_SERVER_PASSWORD;
-const run = (exe, args, options = {}) => execFileSync(exe, args, { cwd, encoding: 'utf8', timeout: 90000, windowsHide: true, ...options });
-const cli = (...args) => run(process.execPath, [join(root, 'bin/titlewave.mjs'), ...args]);
+const run = (exe, args, options = {}) => execFileSync(exe, args, { cwd, encoding: 'utf8', timeout: 90000, killSignal: 'SIGKILL', windowsHide: true, ...options });
+const cli = (...args) => run(process.execPath, [join(root, 'bin/titlewave.mjs'), ...args], { timeout: 120000 });
 const results = [];
 async function check(name, action) {
   if (process.env.TITLEWAVE_TEST_AGENTS && !process.env.TITLEWAVE_TEST_AGENTS.split(',').includes(name.split(' ')[0].toLowerCase())) return;
@@ -74,8 +75,8 @@ await check('Goose imports a session, renames it, and lists the saved name', asy
 });
 
 await check('Gemini lists an offline JSONL summary without changing messages', async () => {
-  process.env.GEMINI_API_KEY = 'titlewave-offline-listing-only';
-  run('gemini', ['--list-sessions']);
+  const env = { ...process.env, GEMINI_API_KEY: 'titlewave-offline-listing-only' };
+  run('gemini', ['--list-sessions'], { env });
   const hash = createHash('sha256').update(cwd).digest('hex');
   const chats = join(home, '.gemini', 'tmp', hash, 'chats'); mkdirSync(chats, { recursive: true });
   const id = randomUUID();
@@ -87,7 +88,7 @@ await check('Gemini lists an offline JSONL summary without changing messages', a
   writeFileSync(file, original);
   cli('Gemini integration', '--agent', 'gemini', '--session', id, '--offline', '--transcript', file);
   assert.ok(readFileSync(file, 'utf8').startsWith(original));
-  const listing = run('gemini', ['--list-sessions']);
+  const listing = run('gemini', ['--list-sessions'], { env });
   writeFileSync(join(temporary, 'gemini-list.txt'), listing);
   assert.match(listing, /Gemini integration/);
 });
@@ -110,24 +111,32 @@ await check('Claude renames a real resumable fixture without a model turn', asyn
 });
 
 await check('OpenCode creates and renames a real server-owned session', async () => {
+  const config = join(home, 'config', 'opencode');
+  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', config, '@opencode-ai/plugin@1.19.6'], { timeout: 300000 });
   const port = 42000 + Math.floor(Math.random() * 10000);
   const url = `http://127.0.0.1:${port}`;
-  const server = spawn('opencode', ['serve', '--pure', '--hostname', '127.0.0.1', '--port', String(port)], { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const env = { ...process.env, XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_CACHE_HOME: join(home, 'cache'), OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true', OPENCODE_DISABLE_AUTOUPDATE: 'true', OPENCODE_DISABLE_MODELS_FETCH: 'true', OPENCODE_DISABLE_EMBEDDED_WEB_UI: 'true', OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(join(root, 'extensions/opencode.mjs')).href] }) };
+  const server = spawn('opencode', ['serve', '--print-logs', '--log-level', 'DEBUG', '--hostname', '127.0.0.1', '--port', String(port)], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   let logs = ''; server.stdout.on('data', data => { logs += data; }); server.stderr.on('data', data => { logs += data; });
+  server.on('exit', (code, signal) => { logs += `\nOpenCode exited (${code}, ${signal})`; });
   try {
     let ready = false;
     for (let attempt = 0; attempt < 120; attempt++) {
+      if (server.exitCode !== null || server.signalCode !== null) break;
       try { if ((await (await fetch(`${url}/global/health`, { signal: AbortSignal.timeout(1000) })).json()).healthy) { ready = true; break; } } catch {}
       await new Promise(resolve => setTimeout(resolve, 250));
     }
-    assert.ok(ready, logs);
+    assert.ok(ready, logs || 'OpenCode server did not become healthy');
+    const commands = await (await fetch(`${url}/command`, { signal: AbortSignal.timeout(90000) })).json();
+    assert.ok(commands.some(command => command.name === 'titlewave' && command.template.includes('$ARGUMENTS')), logs || 'OpenCode titlewave command was not registered');
     const created = await fetch(`${url}/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Before' }), signal: AbortSignal.timeout(15000) });
     assert.ok(created.ok, `${created.status}: ${logs}`);
     const session = await created.json();
     assert.match(cli('OpenCode integration', '--agent', 'opencode', '--session', session.id, '--url', url), /Session renamed to:/);
     const saved = await (await fetch(`${url}/session/${session.id}`, { signal: AbortSignal.timeout(15000) })).json();
     assert.equal(saved.title, 'OpenCode integration');
-  } finally { server.kill(); }
+  } catch (error) { throw new Error(`${error.message}\n${logs}`); }
+  finally { server.kill('SIGKILL'); }
 });
 
 mkdirSync(join(root, '.evidence'), { recursive: true });

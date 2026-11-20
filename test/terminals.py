@@ -81,11 +81,11 @@ xvfb = subprocess.Popen(['Xvfb', ':93', '-screen','0','1280x800x24'],stdout=subp
 time.sleep(1)
 display = {**clean,'DISPLAY':':93','LIBGL_ALWAYS_SOFTWARE':'1'}
 
-def emulator(exe):
-    title = 'Titlewave-' + exe
+def emulator(exe, detached=False):
+    title = 'Titlewave-' + exe + ('-detached' if detached else '')
     with tempfile.TemporaryDirectory() as td:
         script = pathlib.Path(td) / 'title.sh'
-        script.write_text('#!/bin/sh\nnode '+CLI+' terminal '+title+' >'+td+'/result 2>&1\nsleep 30\n')
+        script.write_text('#!/bin/sh\n'+('setsid ' if detached else '')+'node '+CLI+' terminal '+title+' >'+td+'/result 2>&1\nsleep 30\n')
         args = {'xterm':['xterm','-e','sh',str(script)], 'urxvt':['urxvt','-e','sh',str(script)], 'alacritty':['alacritty','-e','sh',str(script)], 'kitty':['kitty','-o','allow_remote_control=yes','--listen-on','unix:'+td+'/kitty.sock','sh',str(script)]}[exe]
         process = subprocess.Popen(args,env=display,stdout=subprocess.DEVNULL,stderr=open(td+'/stderr','w'))
         try:
@@ -99,6 +99,7 @@ def emulator(exe):
             process.terminate();process.wait(timeout=10)
 for exe in ['xterm','urxvt','alacritty','kitty']:
     check(exe+' real X11 window title',lambda exe=exe:emulator(exe))
+check('detached tool process targets its parent X11 terminal', lambda: emulator('xterm', detached=True))
 xvfb.terminate();xvfb.wait()
 (ROOT/'.evidence').mkdir(exist_ok=True)
 (ROOT/'.evidence/terminals.json').write_text(json.dumps(RESULTS,indent=2))

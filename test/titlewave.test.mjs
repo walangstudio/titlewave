@@ -9,7 +9,24 @@ import { once } from 'node:events';
 import { validateName, detectAgent, renameGemini, renameSession } from '../lib/agents.mjs';
 import { terminalHost } from '../lib/terminal.mjs';
 import titlewave from '../extensions/pi.mjs';
-import { nativeCommand } from '../lib/rpc.mjs';
+import opencodeTitlewave from '../extensions/opencode.mjs';
+import { nativeCommand, withRpc } from '../lib/rpc.mjs';
+
+test('RPC children exit even when they ignore graceful termination', async () => {
+  const script = `import { createInterface } from 'node:readline';
+    process.on('SIGTERM', () => {});
+    setInterval(() => {}, 1000);
+    createInterface({ input: process.stdin }).on('line', line => {
+      const { id } = JSON.parse(line);
+      console.log(JSON.stringify({ id, success: true, data: { pid: process.pid } }));
+    });`;
+  const pid = await withRpc('node', ['--input-type=module', '-e', script], request => request('pid'), 'pi').then(result => result.pid);
+  try {
+    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'RPC subprocess survived cleanup');
+  } finally {
+    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  }
+});
 
 test('names preserve spaces, Unicode, quotes, and shell metacharacters', () => {
   for (const name of ['Fix login', '日本語', 'a "quote"', "O'Brien", '$(touch bad); & echo nope']) assert.equal(validateName(name), name);
@@ -21,6 +38,47 @@ test('agent detection refuses missing or nested identities', () => {
   assert.throws(() => detectAgent({}));
   assert.throws(() => detectAgent({ CODEX_THREAD_ID: 'c', CLAUDE_CODE_SESSION_ID: 'a' }));
   assert.equal(detectAgent({ CODEX_THREAD_ID: 'c' }), 'codex');
+});
+
+test('skill launcher refuses an inherited parent session without explicit targets', () => {
+  for (const args of [['New name'], ['New name', '--agent', 'codex'], ['New name', '--session', 'child'], ['terminal', '--agent', 'codex'], ['terminal', '--terminal'], ['New name', '--agent', 'codex', '--session', ''], ['New name', '--agent', '', '--session', 'child'], ['New name', '--agent', 'codex', '--session=']]) {
+    const result = spawnSync(process.execPath, ['skills/titlewave/scripts/titlewave.mjs', ...args], { encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: 'parent-session' } });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /explicit --agent and --session/);
+  }
+  const result = spawnSync(process.execPath, ['skills/titlewave/scripts/titlewave.mjs', 'New name', '--agent', 'codex', '--session', 'child', '--dry-run'], { encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: 'parent-session' } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).session, 'child');
+  for (const args of [['New name', '--agent=codex', '--session=child', '--dry-run'], ['terminal', 'Window name', '--dry-run']]) {
+    const parsed = spawnSync(process.execPath, ['skills/titlewave/scripts/titlewave.mjs', ...args], { encoding: 'utf8' });
+    assert.equal(parsed.status, 0, parsed.stderr);
+    assert.equal(JSON.parse(parsed.stdout).name, args[0] === 'terminal' ? 'Window name' : 'New name');
+  }
+  const empty = spawnSync(process.execPath, ['bin/titlewave.mjs', 'New name', '--agent', 'codex', '--session', '', '--dry-run'], { encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: 'parent-session' } });
+  assert.notEqual(empty.status, 0);
+  assert.match(empty.stderr, /must|not.*empty/);
+});
+
+test('OpenCode context supplies its exact session and strips URL credentials', async () => {
+  const hooks = await opencodeTitlewave({ serverUrl: new URL('http://user:secret@127.0.0.1:4096/base/?token=secret#fragment') });
+  const output = { system: [] };
+  await hooks['experimental.chat.system.transform']({ sessionID: 'ses_current' }, output);
+  assert.match(output.system[0], /--agent opencode/);
+  assert.match(output.system[0], /ses_current/);
+  assert.match(output.system[0], /http:\/\/127\.0\.0\.1:4096\/base\//);
+  assert.equal(output.system[0].includes('secret'), false);
+  await hooks['experimental.chat.system.transform']({ sessionID: 'bad\ninstruction' }, output);
+  assert.equal(output.system.length, 1);
+});
+
+test('OpenCode registers a slash fallback without overwriting user commands', async () => {
+  const hooks = await opencodeTitlewave({ serverUrl: new URL('http://127.0.0.1:4096') });
+  const config = {};
+  await hooks.config(config);
+  assert.match(config.command.titlewave.template, /\$ARGUMENTS/);
+  config.command.titlewave = { template: 'User command' };
+  await hooks.config(config);
+  assert.equal(config.command.titlewave.template, 'User command');
 });
 test('an inner multiplexer wins over the outer terminal', () => {
   assert.equal(terminalHost({ TMUX: 'socket', TMUX_PANE: '%1', KITTY_WINDOW_ID: '3' }), 'tmux');

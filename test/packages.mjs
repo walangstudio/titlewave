@@ -30,6 +30,7 @@ run('codex', ['plugin', 'marketplace', 'add', catalog]);
 const installed = JSON.parse(run('codex', ['plugin', 'add', 'titlewave@titlewave-test', '--json']));
 assert.equal(installed.name, 'titlewave');
 assert.match(run(process.execPath, [join(installed.installedPath, 'bin/titlewave.mjs'), '--help']), /titlewave/);
+assert.match(run(process.execPath, [join(installed.installedPath, 'skills/titlewave/scripts/titlewave.mjs'), '--help']), /titlewave/);
 console.log('PASS Codex marketplace install with bundled runtime');
 run('gemini', ['extensions', 'link', root, '--consent']);
 assert.match(run('gemini', ['extensions', 'list'], true), /titlewave/);

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 
-for (const directory of ['bin', 'lib', 'extensions', 'hooks', 'scripts', 'test']) {
+for (const directory of ['bin', 'lib', 'extensions', 'hooks', 'scripts', 'test', 'skills/titlewave/scripts']) {
   for (const file of readdirSync(directory)) {
     if (file.endsWith('.mjs')) execFileSync(process.execPath, ['--check', `${directory}/${file}`]);
   }
