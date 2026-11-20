@@ -7,6 +7,8 @@ RUN npm install -g @openai/codex@0.170.0 @anthropic-ai/claude-code@2.1.328 \
     @google/gemini-cli@0.69.0 @earendil-works/pi-coding-agent@0.80.2 opencode-ai@1.19.6 \
     && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs \
     && node /usr/local/lib/node_modules/opencode-ai/postinstall.mjs
+ENV TITLEWAVE_OPENCODE_SDK=/opt/titlewave-opencode-sdk
+RUN npm install --ignore-scripts --no-audit --no-fund --prefix "$TITLEWAVE_OPENCODE_SDK" @opencode-ai/plugin@1.19.6
 RUN curl -fLsS https://github.com/aaif-goose/goose/releases/download/v1.60.1/goose-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/goose.tar.bz2 \
     && tar -xjf /tmp/goose.tar.bz2 -C /usr/local/bin \
     && curl -fLsS https://github.com/zellij-org/zellij/releases/download/v0.46.0/zellij-no-web-x86_64-unknown-linux-musl.tar.gz -o /tmp/zellij.tar.gz \

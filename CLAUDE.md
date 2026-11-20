@@ -26,6 +26,11 @@ marketplace entry that points at it.
 
 ## Failure log
 
+- Keep Claude hooks inline in `.claude-plugin/plugin.json`; Gemini executes
+  `hooks/hooks.json`.
+- Wait for Konsole's window to map before sending its first title.
+- Preinstall OpenCode's pinned plugin SDK in the integration image and preserve
+  relative symlinks when copying it into a fixture.
 - Windows npm `.cmd` shims cannot be executed safely with arbitrary names.
   Require native `.exe` CLIs instead of passing user input through `cmd /c`.
 - Keep Zellij's stdout on its PTY during startup. Redirecting it prevents the

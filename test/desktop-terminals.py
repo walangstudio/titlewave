@@ -76,7 +76,9 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
             observed = 'Titlewave-locked' if fixed else name
             case = pathlib.Path(tempfile.mkdtemp(prefix='case-', dir=directory))
             script = case / 'title.sh'
-            script.write_text('#!/bin/sh\n' + shlex.join(['node', CLI, 'terminal', name]) + ' >' + shlex.quote(str(case / 'result')) + ' 2>&1\nprintf "%s" "$?" >' + shlex.quote(str(case / 'status.tmp')) + '\nmv ' + shlex.quote(str(case / 'status.tmp')) + ' ' + shlex.quote(str(case / 'status')) + '\nsleep 60\n')
+            ready = case / 'ready'
+            startup = 'while [ ! -f ' + shlex.quote(str(ready)) + ' ]; do sleep .1; done\n' if exe == 'konsole' else ''
+            script.write_text('#!/bin/sh\n' + startup + shlex.join(['node', CLI, 'terminal', name]) + ' >' + shlex.quote(str(case / 'result')) + ' 2>&1\nprintf "%s" "$?" >' + shlex.quote(str(case / 'status.tmp')) + '\nmv ' + shlex.quote(str(case / 'status.tmp')) + ' ' + shlex.quote(str(case / 'status')) + '\nsleep 60\n')
             command = ['sh', str(script)]
             args = {
                 'ghostty': ['ghostty', '--gtk-single-instance=false', '--shell-integration=none', *(['--title=Titlewave-locked'] if fixed else []), '-e', *command],
@@ -94,6 +96,20 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
             try:
                 state = ''
                 identity = None
+                if exe == 'konsole':
+                    def mapped():
+                        try:
+                            tree = run('xwininfo', '-root', '-tree', env=xenv)
+                            for line in tree.splitlines():
+                                if '("konsole" "konsole")' not in line: continue
+                                info = subprocess.run(['xwininfo', '-id', line.strip().split()[0]], env=xenv, text=True, capture_output=True, timeout=10)
+                                if info.returncode == 0 and 'Map State: IsViewable' in info.stdout: return True
+                        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                            pass
+                        return False
+                    try: wait_for(mapped, process, log)
+                    except AssertionError as error: raise AssertionError('Konsole window never mapped: ' + log.read_text()) from error
+                    ready.touch()
                 def renamed():
                     nonlocal state, identity
                     status = case / 'status'

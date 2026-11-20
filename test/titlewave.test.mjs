@@ -12,6 +12,19 @@ import titlewave from '../extensions/pi.mjs';
 import opencodeTitlewave from '../extensions/opencode.mjs';
 import { nativeCommand, withRpc } from '../lib/rpc.mjs';
 
+test('Claude session hook stays scoped to its manifest and supplies the exact ID', () => {
+  assert.equal(existsSync('hooks/hooks.json'), false, 'Gemini auto-loads this shared hook path');
+  const manifest = JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8'));
+  const hooks = manifest.hooks.SessionStart.flatMap(entry => entry.hooks);
+  assert.equal(hooks.length, 1);
+  assert.equal(hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/hooks/context.mjs"');
+  const result = spawnSync(process.execPath, ['hooks/context.mjs'], { input: JSON.stringify({ session_id: 'claude-current-123' }), encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const context = JSON.parse(result.stdout).hookSpecificOutput;
+  assert.equal(context.hookEventName, 'SessionStart');
+  assert.match(context.additionalContext, /current Claude session ID: claude-current-123\./);
+});
+
 test('RPC children exit even when they ignore graceful termination', async () => {
   const script = `import { createInterface } from 'node:readline';
     process.on('SIGTERM', () => {});

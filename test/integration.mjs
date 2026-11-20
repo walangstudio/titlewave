@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -112,7 +112,8 @@ await check('Claude renames a real resumable fixture without a model turn', asyn
 
 await check('OpenCode creates and renames a real server-owned session', async () => {
   const config = join(home, 'config', 'opencode');
-  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', config, '@opencode-ai/plugin@1.19.6'], { timeout: 300000 });
+  if (process.env.TITLEWAVE_OPENCODE_SDK) cpSync(process.env.TITLEWAVE_OPENCODE_SDK, config, { recursive: true, verbatimSymlinks: true });
+  else run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', config, '@opencode-ai/plugin@1.19.6'], { timeout: 300000 });
   const port = 42000 + Math.floor(Math.random() * 10000);
   const url = `http://127.0.0.1:${port}`;
   const env = { ...process.env, XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_CACHE_HOME: join(home, 'cache'), OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true', OPENCODE_DISABLE_AUTOUPDATE: 'true', OPENCODE_DISABLE_MODELS_FETCH: 'true', OPENCODE_DISABLE_EMBEDDED_WEB_UI: 'true', OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(join(root, 'extensions/opencode.mjs')).href] }) };

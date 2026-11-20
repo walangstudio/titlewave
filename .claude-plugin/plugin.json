@@ -1,9 +1,14 @@
 {
   "name": "titlewave",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Make waves with better coding-agent session titles.",
   "author": { "name": "walangstudio" },
   "homepage": "https://github.com/walangstudio/titlewave",
   "repository": "https://github.com/walangstudio/titlewave",
-  "license": "MIT"
+  "license": "MIT",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.mjs\"" }] }
+    ]
+  }
 }
