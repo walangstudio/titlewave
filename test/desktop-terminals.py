@@ -53,7 +53,7 @@ def check(name, action):
         print('FAIL', name, detail, flush=True)
 
 
-packages = run('pacman', '-Q', 'ghostty', 'foot', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'terminator', 'sway').splitlines()
+packages = run('pacman', '-Q', 'ghostty', 'foot', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'terminator', 'rio', 'contour', 'sway').splitlines()
 print('Installed packages:\n' + '\n'.join(packages), flush=True)
 ghostty_version = run('ghostty', '--version').splitlines()[0]
 print(ghostty_version, flush=True)
@@ -85,6 +85,8 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
                 'xfce4-terminal': ['xfce4-terminal', '--disable-server', '-x', *command],
                 'terminator': ['terminator', '--no-dbus', '-x', *command],
                 'foot': ['foot', *command],
+                'rio': ['rio', *(['--title=Titlewave-locked'] if fixed else []), '-e', *command],
+                'contour': ['contour', 'terminal', *command],
             }[exe]
             log = case / 'stderr'
             with log.open('w') as output:
@@ -134,9 +136,10 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
                         RESULTS.append({'name': f'{name} cleanup', 'pass': False, 'error': f'Window {identity} not confirmed closed: {error}'})
                         print(f'FAIL {name} cleanup: {error}', flush=True)
 
-        for exe in ['ghostty', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'terminator']:
+        for exe in ['ghostty', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'terminator', 'rio', 'contour']:
             check(f'{exe} X11 window title', lambda exe=exe: emulator(exe))
         check('Ghostty fixed title correctly prevents OSC changes', lambda: emulator('ghostty', fixed=True))
+        check('Rio fixed title correctly prevents OSC changes', lambda: emulator('rio', fixed=True))
     finally:
         stop(xvfb)
 
@@ -155,7 +158,7 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
                 except subprocess.CalledProcessError: return None
                 return ipc, display.name
         socket, wenv['WAYLAND_DISPLAY'] = wait_for(compositor_ready, sway, wlog)
-        for exe in ['foot', 'ghostty']:
+        for exe in ['foot', 'ghostty', 'rio', 'contour']:
             check(f'{exe} Wayland compositor title', lambda exe=exe: emulator(exe, 'wayland'))
     finally:
         stop(sway)

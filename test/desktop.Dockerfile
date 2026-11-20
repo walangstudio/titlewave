@@ -1,7 +1,7 @@
 FROM archlinux@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899
 RUN printf 'Server = https://archive.archlinux.org/repos/2026/11/18/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist \
     && pacman -Syyuu --noconfirm --needed \
-    ghostty foot konsole gnome-terminal xfce4-terminal terminator \
+    ghostty foot konsole gnome-terminal xfce4-terminal terminator rio contour vulkan-swrast \
     xorg-server-xvfb xorg-xwininfo dbus mesa ttf-dejavu nodejs python sway \
     && if [ -n "$(getcap /usr/bin/sway)" ]; then setcap -r /usr/bin/sway; fi \
     && useradd -m -u 1000 titlewave \
