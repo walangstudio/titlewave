@@ -42,3 +42,4 @@ marketplace entry that points at it.
 - Retry slow Arch archive downloads before installation; preserve the package cache, native timeouts, TLS and signatures.
 - Refuse surrounding whitespace before Herdr can silently trim a label.
 - Clear the desktop image's package cache directly; pacman -Scc fails on its temporary download directories.
+- Refuse Codex shared-daemon terminal IDs; use an explicitly verified Herdr pane rather than inherited IDs or agent-session metadata.

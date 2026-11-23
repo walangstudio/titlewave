@@ -62,8 +62,8 @@ test('skill launcher refuses an inherited parent session without explicit target
   const result = spawnSync(process.execPath, ['skills/titlewave/scripts/titlewave.mjs', 'New name', '--agent', 'codex', '--session', 'child', '--dry-run'], { encoding: 'utf8', env: { ...process.env, CODEX_THREAD_ID: 'parent-session' } });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).session, 'child');
-  for (const args of [['New name', '--agent=codex', '--session=child', '--dry-run'], ['terminal', 'Window name', '--dry-run']]) {
-    const parsed = spawnSync(process.execPath, ['skills/titlewave/scripts/titlewave.mjs', ...args], { encoding: 'utf8' });
+  for (const args of [['New name', '--agent=codex', '--session=child', '--dry-run'], ['terminal', 'Window name', '--dry-run'], ['terminal', 'Window name', '--herdr-pane', 'w2:p1', '--dry-run'], ['New name', '--agent', 'codex', '--session', 'child', '--terminal', '--herdr-pane', 'w2:p1', '--dry-run']]) {
+    const parsed = spawnSync(process.execPath, ['skills/titlewave/scripts/titlewave.mjs', ...args], { encoding: 'utf8', env: { ...process.env, CODEX_DAEMON_SHUTDOWN_SOCKET: '' } });
     assert.equal(parsed.status, 0, parsed.stderr);
     assert.equal(JSON.parse(parsed.stdout).name, args[0] === 'terminal' ? 'Window name' : 'New name');
   }
@@ -101,6 +101,11 @@ test('an inner multiplexer wins over the outer terminal', () => {
 test('Herdr rejects surrounding whitespace before any terminal command', () => {
   for (const name of [' title', 'title ']) assert.throws(() => setTerminalTitle(name, { HERDR_PANE_ID: 'missing-pane' }), /Herdr trims surrounding whitespace/);
 });
+test('Codex shared daemon refuses inherited terminal targets before any command', () => {
+  for (const terminal of [{}, { HERDR_PANE_ID: 'w2:p1' }, { TMUX: 'socket', TMUX_PANE: '%1' }, { STY: 'screen', WINDOW: '0' }, { ZELLIJ: '1' }, { WEZTERM_PANE: '1' }, { KITTY_WINDOW_ID: '1' }]) {
+    assert.throws(() => setTerminalTitle('New name', { ...terminal, CODEX_DAEMON_SHUTDOWN_SOCKET: 'shared-server' }), /Codex shared-daemon.*verified --herdr-pane/);
+  }
+});
 test('nested multiplexers fail instead of labeling the wrong layer', () => {
   assert.throws(() => terminalHost({ TMUX: 'outer', TMUX_PANE: '%1', ZELLIJ: '0' }), /Multiple multiplexers/);
 });
@@ -110,13 +115,20 @@ test('the word terminal is a valid saved session name', () => {
   assert.equal(JSON.parse(result.stdout).name, 'terminal');
 });
 test('dry run starts no agent and emits no terminal escape sequence', () => {
-  const result = spawnSync(process.execPath, ['bin/titlewave.mjs', 'Dry run', '--agent', 'claude', '--session', 'missing', '--terminal', '--dry-run'], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, ['bin/titlewave.mjs', 'Dry run', '--agent', 'claude', '--session', 'missing', '--terminal', '--dry-run'], { encoding: 'utf8', env: { ...process.env, CODEX_DAEMON_SHUTDOWN_SOCKET: '' } });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).name, 'Dry run');
   assert.equal(result.stdout.includes('\x1b'), false);
+  const explicit = spawnSync(process.execPath, ['bin/titlewave.mjs', 'terminal', 'Window name', '--herdr-pane', 'w2:p1', '--dry-run'], { encoding: 'utf8', env: { ...process.env, TMUX: 'stale', TMUX_PANE: '%1' } });
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.equal(JSON.parse(explicit.stdout).host, 'herdr');
+  assert.equal(JSON.parse(explicit.stdout)['herdr-pane'], 'w2:p1');
+  const refused = spawnSync(process.execPath, ['bin/titlewave.mjs', 'terminal', 'Window name', '--dry-run'], { encoding: 'utf8', env: { ...process.env, CODEX_DAEMON_SHUTDOWN_SOCKET: 'shared-server' } });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /Codex shared-daemon/);
 });
 test('unknown options and extra names fail instead of silently renaming', () => {
-  for (const args of [['one', 'two'], ['one', '--offine']]) assert.notEqual(spawnSync(process.execPath, ['bin/titlewave.mjs', ...args]).status, 0);
+  for (const args of [['one', 'two'], ['one', '--offine'], ['terminal', 'Name', '--herdr-pane', ''], ['Name', '--agent', 'codex', '--session', 'missing', '--herdr-pane', 'w2:p1']]) assert.notEqual(spawnSync(process.execPath, ['bin/titlewave.mjs', ...args]).status, 0);
 });
 test('closed Gemini rename preserves conversation data', () => {
   const directory = mkdtempSync(join(tmpdir(), 'titlewave-test-'));
