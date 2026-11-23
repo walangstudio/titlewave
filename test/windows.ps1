@@ -3,17 +3,45 @@ $root = Split-Path $PSScriptRoot
 $cli = Join-Path $root 'bin/titlewave.mjs'
 $results = @()
 if ($env:HERDR_ENV -eq '1' -and (Get-Command herdr -ErrorAction SilentlyContinue)) {
-  $pane = (herdr pane split --current --direction right --no-focus --cwd $root | ConvertFrom-Json).result.pane.pane_id
-  if (-not $pane) { throw 'Herdr did not create a test pane' }
+  if ([string]::IsNullOrWhiteSpace($env:HERDR_WORKSPACE_ID)) { throw 'Herdr checks require HERDR_WORKSPACE_ID' }
+  function Invoke-Herdr {
+    $output = & herdr @args
+    if ($LASTEXITCODE -ne 0) { throw "Herdr command failed: $($args -join ' ')" }
+    ($output | ConvertFrom-Json).result
+  }
+  $created = Invoke-Herdr tab create --workspace $env:HERDR_WORKSPACE_ID --label 'Titlewave Herdr fixture' --no-focus --cwd $root
+  $tab = $created.tab.tab_id
+  $pane = $created.root_pane.pane_id
+  if (-not $tab -or -not $pane) {
+    if ($tab) { Invoke-Herdr tab close $tab | Out-Null }
+    throw 'Herdr did not create a test tab'
+  }
   $previous = $env:HERDR_PANE_ID
+  $previousTab = $env:HERDR_TAB_ID
   try {
     $env:HERDR_PANE_ID = $pane
+    $env:HERDR_TAB_ID = 'titlewave-stale-tab'
     & node $cli terminal 'Titlewave Herdr test'
     if ($LASTEXITCODE -ne 0) { throw 'Herdr rename failed' }
-    $saved = (herdr pane get $pane | ConvertFrom-Json).result.pane.label
+    $saved = (Invoke-Herdr pane get $pane).pane.label
     if ($saved -ne 'Titlewave Herdr test') { throw "Unexpected Herdr title: $saved" }
-    $results += 'PASS Herdr targeted pane'
-  } finally { $env:HERDR_PANE_ID = $previous; herdr pane close $pane | Out-Null }
+    $saved = (Invoke-Herdr tab get $tab).tab.label
+    if ($saved -ne 'Titlewave Herdr test') { throw "Unexpected Herdr tab title: $saved" }
+    $results += 'PASS Herdr single-pane tab and pane labels'
+    $split = (Invoke-Herdr pane split $pane --direction right --no-focus --cwd $root).pane.pane_id
+    if (-not $split) { throw 'Herdr did not create a split pane' }
+    Invoke-Herdr pane rename $split 'Titlewave neighbor sentinel' | Out-Null
+    & node $cli terminal 'Titlewave Herdr pane only'
+    if ($LASTEXITCODE -ne 0) { throw 'Herdr split-pane rename failed' }
+    if ((Invoke-Herdr pane get $pane).pane.label -ne 'Titlewave Herdr pane only') { throw 'Herdr did not save the calling pane label' }
+    if ((Invoke-Herdr tab get $tab).tab.label -ne 'Titlewave Herdr test') { throw 'Herdr changed a shared tab title' }
+    if ((Invoke-Herdr pane get $split).pane.label -ne 'Titlewave neighbor sentinel') { throw 'Herdr changed the neighboring pane label' }
+    $results += 'PASS Herdr split tab and neighboring pane preserved'
+  } finally {
+    $env:HERDR_PANE_ID = $previous
+    $env:HERDR_TAB_ID = $previousTab
+    Invoke-Herdr tab close $tab | Out-Null
+  }
 }
 if (Get-Command wezterm -ErrorAction SilentlyContinue) {
   $panes = wezterm cli --no-auto-start list --format json 2>$null

@@ -37,3 +37,5 @@ marketplace entry that points at it.
   headless integration session from initializing.
 - Gemini's extension listing uses stderr; capture both streams when checking it.
 - Shell scripts must have LF endings when Docker copies the working tree.
+- Rename Herdr's single-pane tab too; changing a pane label leaves the tab unchanged.
+- Allow 60 seconds for cold desktop-terminal startup in headless checks.

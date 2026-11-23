@@ -126,7 +126,7 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
                     if match:
                         identity = match['id']
                         return {'title': match['name'], 'app_id': match['app_id']}
-                try: observation = wait_for(renamed, process, log)
+                try: observation = wait_for(renamed, process, log, timeout=60)
                 except AssertionError as error: raise AssertionError(f'{error}\nWindow state: {state}') from error
                 if fixed:
                     assert 'visible terminal label not verified' in (case / 'result').read_text()
