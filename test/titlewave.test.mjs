@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { validateName, detectAgent, renameGemini, renameSession } from '../lib/agents.mjs';
-import { terminalHost } from '../lib/terminal.mjs';
+import { terminalHost, setTerminalTitle } from '../lib/terminal.mjs';
 import titlewave from '../extensions/pi.mjs';
 import opencodeTitlewave from '../extensions/opencode.mjs';
 import { nativeCommand, withRpc } from '../lib/rpc.mjs';
@@ -97,6 +97,9 @@ test('an inner multiplexer wins over the outer terminal', () => {
   assert.equal(terminalHost({ TMUX: 'socket', TMUX_PANE: '%1', KITTY_WINDOW_ID: '3' }), 'tmux');
   assert.equal(terminalHost({ STY: 'screen', WINDOW: '0', WEZTERM_PANE: '2' }), 'screen');
   assert.equal(terminalHost({ ZELLIJ: '0', WEZTERM_PANE: '2' }), 'zellij');
+});
+test('Herdr rejects surrounding whitespace before any terminal command', () => {
+  for (const name of [' title', 'title ']) assert.throws(() => setTerminalTitle(name, { HERDR_PANE_ID: 'missing-pane' }), /Herdr trims surrounding whitespace/);
 });
 test('nested multiplexers fail instead of labeling the wrong layer', () => {
   assert.throws(() => terminalHost({ TMUX: 'outer', TMUX_PANE: '%1', ZELLIJ: '0' }), /Multiple multiplexers/);

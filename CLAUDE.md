@@ -39,3 +39,5 @@ marketplace entry that points at it.
 - Shell scripts must have LF endings when Docker copies the working tree.
 - Rename Herdr's single-pane tab too; changing a pane label leaves the tab unchanged.
 - Allow 60 seconds for cold desktop-terminal startup in headless checks.
+- Retry slow Arch archive downloads before installation; preserve the package cache, native timeouts, TLS and signatures.
+- Refuse surrounding whitespace before Herdr can silently trim a label.
