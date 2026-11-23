@@ -12,7 +12,7 @@ RUN printf 'Server = https://archive.archlinux.org/repos/2026/11/18/$repo/os/$ar
     && pacman -Suu --noconfirm --needed "$@" \
     && if [ -n "$(getcap /usr/bin/sway)" ]; then setcap -r /usr/bin/sway; fi \
     && useradd -m -u 1000 titlewave \
-    && yes | pacman -Scc
+    && rm -rf /var/cache/pacman/pkg/*
 WORKDIR /work
 RUN chown titlewave:titlewave /work
 COPY --chown=titlewave:titlewave package.json ./

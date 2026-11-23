@@ -41,3 +41,4 @@ marketplace entry that points at it.
 - Allow 60 seconds for cold desktop-terminal startup in headless checks.
 - Retry slow Arch archive downloads before installation; preserve the package cache, native timeouts, TLS and signatures.
 - Refuse surrounding whitespace before Herdr can silently trim a label.
+- Clear the desktop image's package cache directly; pacman -Scc fails on its temporary download directories.
