@@ -3,11 +3,12 @@ RUN printf 'Server = https://archive.archlinux.org/repos/2026/11/18/$repo/os/$ar
     && set -- \
     ghostty foot konsole gnome-terminal xfce4-terminal terminator rio contour vulkan-swrast \
     xorg-server-xvfb xorg-xwininfo dbus mesa ttf-dejavu nodejs python sway procps-ng \
-    && refresh=-Syyuuw \
     && for attempt in 1 2 3; do \
-        pacman "$refresh" --noconfirm --needed "$@" && break; \
+        timeout --kill-after=30s 5m pacman -Syyuuw --noconfirm --needed --disable-download-timeout "$@" && break; \
         [ "$attempt" -lt 3 ] || exit 1; \
-        refresh=-Syuuw; sleep $((attempt * 15)); \
+        find /var/cache/pacman/pkg -mindepth 2 -maxdepth 2 -type f -name '*.pkg.tar.*' -exec mv -t /var/cache/pacman/pkg -- {} + || exit 1; \
+        rm -f /var/lib/pacman/db.lck; \
+        sleep $((attempt * 15)); \
     done \
     && pacman -Suu --noconfirm --needed "$@" \
     && if [ -n "$(getcap /usr/bin/sway)" ]; then setcap -r /usr/bin/sway; fi \
