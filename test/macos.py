@@ -69,8 +69,9 @@ try:
     assert int(node_version.lstrip('v').split('.')[0]) >= 22, 'Node 22 or later is required'
     def title():
         return applescript(f'with timeout of 5 seconds\ntell application "Terminal" to return name of window id {window}\nend timeout')
-    def renamed(name, detached=False):
-        result = subprocess.run([node, str(ROOT/'bin/titlewave.mjs'), 'terminal', name], capture_output=True, text=True, timeout=15, start_new_session=detached)
+    def renamed(name, detached=False, resume=False):
+        cli = ROOT / ('test/restore-title.mjs' if resume else 'bin/titlewave.mjs')
+        result = subprocess.run([node, str(cli), 'terminal', name], capture_output=True, text=True, timeout=15, start_new_session=detached)
         assert result.returncode == 0, result.stderr
         deadline = time.monotonic() + 5
         observed = ''
@@ -90,6 +91,7 @@ try:
     assert bad.returncode != 0 and second in title(), bad.stdout + bad.stderr
     results.append({'name':'Invalid title preserves visible native window title','pass':True})
     results.append({'name':'Detached tool process targets its parent native Terminal','pass':True,'observed':renamed('Titlewave detached ' + marker, detached=True)})
+    results.append({'name':'Resume restores the native Terminal title','pass':True,'observed':renamed('Titlewave resumed ' + marker, resume=True)})
 except Exception as error:
     results.append({'name':'Native Terminal check','pass':False,'error':str(error)})
 finally:

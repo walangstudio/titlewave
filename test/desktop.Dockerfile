@@ -20,5 +20,6 @@ COPY --chown=titlewave:titlewave package.json ./
 COPY --chown=titlewave:titlewave bin ./bin
 COPY --chown=titlewave:titlewave lib ./lib
 COPY --chown=titlewave:titlewave test/desktop-terminals.py ./test/desktop-terminals.py
+COPY --chown=titlewave:titlewave test/restore-title.mjs ./test/restore-title.mjs
 USER titlewave
-CMD ["python", "test/desktop-terminals.py"]
+CMD ["bash", "-c", "python test/desktop-terminals.py && TITLEWAVE_TEST_RESUME=1 python test/desktop-terminals.py"]

@@ -13,7 +13,8 @@ import opencodeTitlewave from '../extensions/opencode.mjs';
 import { nativeCommand, withRpc } from '../lib/rpc.mjs';
 
 test('Claude session hook stays scoped to its manifest and supplies the exact ID', () => {
-  assert.equal(existsSync('hooks/hooks.json'), false, 'Gemini auto-loads this shared hook path');
+  const shared = JSON.parse(readFileSync('hooks/hooks.json', 'utf8'));
+  assert.doesNotMatch(shared.hooks.SessionStart[0].hooks[0].command, /context.mjs/);
   const manifest = JSON.parse(readFileSync('.claude-plugin/plugin.json', 'utf8'));
   const hooks = manifest.hooks.SessionStart.flatMap(entry => entry.hooks);
   assert.equal(hooks.length, 1);
@@ -191,7 +192,7 @@ test('OpenCode rejects remote URLs and misleading confirmations', async () => {
 });
 test('Pi extension registers a command and a model tool using its native API', async () => {
   let command, tool, saved;
-  titlewave({ registerCommand: (name, value) => { assert.equal(name, 'titlewave'); command = value; }, registerTool: value => { tool = value; }, setSessionName: name => { saved = name; } });
+  titlewave({ on: () => {}, registerCommand: (name, value) => { assert.equal(name, 'titlewave'); command = value; }, registerTool: value => { tool = value; }, setSessionName: name => { saved = name; } });
   await command.handler('A session', { ui: { notify: () => {} } });
   assert.equal(saved, 'A session');
   const result = await tool.execute('call', { name: 'Tool session' });

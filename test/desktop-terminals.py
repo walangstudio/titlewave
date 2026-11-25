@@ -1,12 +1,12 @@
 import json, os, pathlib, shlex, signal, subprocess, tempfile, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CLI = str(ROOT / 'bin/titlewave.mjs')
+CLI = str(ROOT / ('test/restore-title.mjs' if os.environ.get('TITLEWAVE_TEST_RESUME') == '1' else 'bin/titlewave.mjs'))
 RESULTS = []
 
 
 def run(*args, env=None):
-    return subprocess.check_output(args, env=env, text=True, stderr=subprocess.STDOUT, timeout=10).strip()
+    return subprocess.check_output(args, env=env, text=True, stderr=subprocess.STDOUT, timeout=30).strip()
 
 
 def stop(process):
@@ -179,7 +179,7 @@ with tempfile.TemporaryDirectory(prefix='titlewave-desktop-') as temporary:
     finally:
         stop(sway)
 
-evidence = pathlib.Path(os.environ.get('TITLEWAVE_DESKTOP_EVIDENCE', ROOT / '.evidence' / 'desktop-terminals.json'))
+evidence = pathlib.Path(os.environ.get('TITLEWAVE_DESKTOP_EVIDENCE', ROOT / '.evidence' / ('desktop-terminals-resume.json' if os.environ.get('TITLEWAVE_TEST_RESUME') == '1' else 'desktop-terminals.json')))
 evidence.parent.mkdir(parents=True, exist_ok=True)
 evidence.write_text(json.dumps({'packages': packages, 'ghostty_version': ghostty_version, 'results': RESULTS}, indent=2))
 print(evidence.read_text(), flush=True)

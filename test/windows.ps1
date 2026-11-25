@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $cli = Join-Path $root 'bin/titlewave.mjs'
+$resume = Join-Path $root 'test/restore-title.mjs'
 $results = @()
 if ($env:HERDR_ENV -eq '1' -and (Get-Command herdr -ErrorAction SilentlyContinue)) {
   if ([string]::IsNullOrWhiteSpace($env:HERDR_WORKSPACE_ID)) { throw 'Herdr checks require HERDR_WORKSPACE_ID' }
@@ -53,6 +54,9 @@ assert.match(result.stderr, /Codex shared-daemon/);
     & node $cli terminal 'Titlewave Herdr test'
     if ($LASTEXITCODE -ne 0 -or (Invoke-Herdr pane get $pane).pane.label -ne 'Titlewave Herdr test' -or (Invoke-Herdr tab get $tab).tab.label -ne 'Titlewave Herdr test') { throw 'Non-daemon inherited Herdr pane failed' }
     $results += 'PASS Herdr inherited pane outside shared daemon'
+    & node $resume terminal 'Titlewave resumed Herdr'
+    if ($LASTEXITCODE -ne 0 -or (Invoke-Herdr pane get $pane).pane.label -ne 'Titlewave resumed Herdr' -or (Invoke-Herdr tab get $tab).tab.label -ne 'Titlewave resumed Herdr') { throw 'Herdr resume title was not restored' }
+    $results += 'PASS Herdr resume restores the pane and tab'
     $env:CODEX_DAEMON_SHUTDOWN_SOCKET = 'titlewave-test-daemon'
     $env:HERDR_PANE_ID = $stalePane
     $split = (Invoke-Herdr pane split $pane --direction right --no-focus --cwd $root).pane.pane_id
@@ -61,7 +65,7 @@ assert.match(result.stderr, /Codex shared-daemon/);
     & node $cli terminal 'Titlewave Herdr pane only' --herdr-pane $pane
     if ($LASTEXITCODE -ne 0) { throw 'Herdr split-pane rename failed' }
     if ((Invoke-Herdr pane get $pane).pane.label -ne 'Titlewave Herdr pane only') { throw 'Herdr did not save the calling pane label' }
-    if ((Invoke-Herdr tab get $tab).tab.label -ne 'Titlewave Herdr test') { throw 'Herdr changed a shared tab title' }
+    if ((Invoke-Herdr tab get $tab).tab.label -ne 'Titlewave resumed Herdr') { throw 'Herdr changed a shared tab title' }
     if ((Invoke-Herdr pane get $split).pane.label -ne 'Titlewave neighbor sentinel') { throw 'Herdr changed the neighboring pane label' }
     $results += 'PASS Herdr split tab and neighboring pane preserved'
   } finally {
@@ -89,6 +93,11 @@ if (Get-Command wezterm -ErrorAction SilentlyContinue) {
       $saved = (wezterm cli --no-auto-start list --format json | Out-String | ConvertFrom-Json) | Where-Object { "$($_.pane_id)" -eq $pane }
       if ($saved.tab_title -ne 'Titlewave WezTerm test') { throw 'WezTerm did not save the tab title' }
       $results += 'PASS WezTerm targeted tab'
+      & node $resume terminal 'Titlewave resumed WezTerm'
+      if ($LASTEXITCODE -ne 0) { throw 'WezTerm resume script failed' }
+      $saved = (wezterm cli --no-auto-start list --format json | Out-String | ConvertFrom-Json) | Where-Object { "$($_.pane_id)" -eq $pane }
+      if ($LASTEXITCODE -ne 0 -or $saved.tab_title -ne 'Titlewave resumed WezTerm') { throw 'WezTerm resume title was not restored' }
+      $results += 'PASS WezTerm resume restores the tab'
     } finally {
       $env:HERDR_PANE_ID = $previousHerdr
       $env:WEZTERM_PANE = $previousWezterm
@@ -102,18 +111,22 @@ New-Item -ItemType Directory -Force $evidence | Out-Null
 $script = @'
 'HERDR_PANE_ID','TMUX','TMUX_PANE','STY','WINDOW','ZELLIJ','WEZTERM_PANE','KITTY_WINDOW_ID','CODEX_DAEMON_SHUTDOWN_SOCKET' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
 & node '__CLI__' terminal 'Titlewave console test' 2>&1 | Out-File '__LOG__'
+if ($LASTEXITCODE -ne 0 -or [Console]::Title -ne 'Titlewave console test') { throw 'Console CLI title did not match' }
+& node '__RESUME__' terminal 'Titlewave resumed console' 2>&1 | Out-File '__LOG__' -Append
+if ($LASTEXITCODE -ne 0) { throw 'Console resume failed' }
 [Console]::Title | Out-File '__TITLE__'
 '@
-$script = $script.Replace('__CLI__', $cli.Replace("'", "''")).Replace('__LOG__', (Join-Path $evidence 'output.txt').Replace("'", "''")).Replace('__TITLE__', (Join-Path $evidence 'title.txt').Replace("'", "''"))
+$script = $script.Replace('__CLI__', $cli.Replace("'", "''")).Replace('__RESUME__', $resume.Replace("'", "''")).Replace('__LOG__', (Join-Path $evidence 'output.txt').Replace("'", "''")).Replace('__TITLE__', (Join-Path $evidence 'title.txt').Replace("'", "''"))
 $scriptPath = Join-Path $evidence 'console.ps1'
 $script | Set-Content -LiteralPath $scriptPath -Encoding utf8
 $console = Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoLogo','-NoProfile','-File',('"' + $scriptPath + '"') -PassThru
 try {
-  if (-not $console.WaitForExit(10000)) { throw 'Console check timed out' }
+  if (-not $console.WaitForExit(30000)) { throw 'Console check timed out' }
   $saved = Get-Content -Raw (Join-Path $evidence 'title.txt') -ErrorAction SilentlyContinue
-  if (-not $saved -or $saved.Trim() -ne 'Titlewave console test') { throw ('Console did not save the title: ' + (Get-Content -Raw (Join-Path $evidence 'output.txt') -ErrorAction SilentlyContinue)) }
+  if (-not $saved -or $saved.Trim() -ne 'Titlewave resumed console') { throw ('Console did not restore the title: ' + (Get-Content -Raw (Join-Path $evidence 'output.txt') -ErrorAction SilentlyContinue)) }
 } finally {
   if (-not $console.HasExited) { & "$env:SystemRoot/System32/taskkill.exe" /PID $console.Id /T /F | Out-Null }
 }
 $results += 'PASS Windows console read-back'
+$results += 'PASS Windows console resume read-back'
 $results
