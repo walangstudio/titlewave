@@ -1,7 +1,7 @@
 import json, os, pathlib, subprocess, tempfile, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CLI = str(ROOT / 'bin/titlewave.mjs')
+CLI = str(ROOT / ('test/restore-title.mjs' if os.environ.get('TITLEWAVE_TEST_RESUME') == '1' else 'bin/titlewave.mjs'))
 RESULTS = []
 
 def run(*args, env=None):
@@ -13,8 +13,9 @@ def check(name, action):
         RESULTS.append({'name': name, 'pass': True})
         print('PASS', name, flush=True)
     except Exception as error:
-        RESULTS.append({'name': name, 'pass': False, 'error': str(error)})
-        print('FAIL', name, str(error), flush=True)
+        message = f'{error}\n{error.output}' if isinstance(error, subprocess.CalledProcessError) else str(error)
+        RESULTS.append({'name': name, 'pass': False, 'error': message})
+        print('FAIL', name, message, flush=True)
 
 clean = {k:v for k,v in os.environ.items() if k not in ['TMUX','TMUX_PANE','STY','WINDOW','ZELLIJ','ZELLIJ_PANE_ID','HERDR_PANE_ID','WEZTERM_PANE','KITTY_WINDOW_ID']}
 
@@ -39,6 +40,14 @@ def screen():
     name = 'titlewave-' + str(os.getpid())
     try:
         run('screen','-dmS',name,'bash','-c','sleep 120')
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                run('screen','-S',name,'-Q','windows')
+                break
+            except subprocess.CalledProcessError:
+                if time.monotonic() >= deadline: raise
+                time.sleep(.05)
         run('node',CLI,'terminal','Screen title',env={**clean,'STY':name,'WINDOW':'0'})
         assert 'Screen title' in run('screen','-S',name,'-Q','windows')
     finally:
@@ -102,5 +111,5 @@ for exe in ['xterm','urxvt','alacritty','kitty']:
 check('detached tool process targets its parent X11 terminal', lambda: emulator('xterm', detached=True))
 xvfb.terminate();xvfb.wait()
 (ROOT/'.evidence').mkdir(exist_ok=True)
-(ROOT/'.evidence/terminals.json').write_text(json.dumps(RESULTS,indent=2))
+(ROOT/'.evidence'/('terminals-resume.json' if os.environ.get('TITLEWAVE_TEST_RESUME') == '1' else 'terminals.json')).write_text(json.dumps(RESULTS,indent=2))
 raise SystemExit(any(not result['pass'] for result in RESULTS))

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path'),e=process.env,r=p.isAbsolute(e.TITLEWAVE_EXTENSION_ROOT||'')?e.TITLEWAVE_EXTENSION_ROOT:(!e.CLAUDE_PLUGIN_ROOT&&p.isAbsolute(e.PLUGIN_ROOT||'')?e.PLUGIN_ROOT:undefined);if(r)import(require('node:url').pathToFileURL(p.join(r,'hooks/start.mjs')).href)\"",
+            "env": { "TITLEWAVE_EXTENSION_ROOT": "${extensionPath}" }
+          }
+        ]
+      }
+    ]
+  }
+}

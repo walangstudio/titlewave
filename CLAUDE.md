@@ -3,7 +3,7 @@
 Dependency-free Node 22+ CLI and coding-agent plugins for session titles.
 
 - `bin/`, `lib/`: shared CLI, native agent interfaces, terminal labels.
-- `skills/`, `hooks/`, `extensions/`: portable skill, Claude context, Pi extension.
+- `skills/`, `hooks/`, `extensions/`: portable skill, agent resume hooks, Pi and OpenCode extensions.
 - `test/`: unit checks, real-agent fixtures, terminal and package checks.
 
 ## The loop
@@ -26,8 +26,11 @@ marketplace entry that points at it.
 
 ## Failure log
 
-- Keep Claude hooks inline in `.claude-plugin/plugin.json`; Gemini executes
-  `hooks/hooks.json`.
+- Keep Claude hooks inline in `.claude-plugin/plugin.json`; the shared Gemini/Goose
+  `hooks/hooks.json` must be a no-op under Claude's automatic discovery.
+- Point Codex's manifest at `hooks/codex.json`; its inline hook object needs a different wrapper from Claude's.
+- Codex queues SessionStart until its first turn; use the `--resume` launcher for immediate titles.
+- Disable agent auto-updates inside integration fixtures so pinned executables cannot disappear during package checks.
 - Wait for Konsole's window to map before sending its first title.
 - Preinstall OpenCode's pinned plugin SDK in the integration image and preserve
   relative symlinks when copying it into a fixture.
